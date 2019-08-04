@@ -209,6 +209,15 @@ struct groups_t
     {
 
     }
+
+    void reset()
+    {
+        min_group_id = 0;
+        new_group_id = 0;
+        src_item.clear();
+        dst_item.clear();
+        decode_timer_list.clear();
+    }
 };
 
 static void get_current_time(uint32_t & seconds, uint32_t & microseconds)
@@ -688,6 +697,9 @@ public:
 public:
     bool encode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list);
 
+public:
+    void reset();
+
 private:
     const uint32_t      m_max_block_size;
     const double        m_recovery_rate;
@@ -716,6 +728,11 @@ bool CauchyFecEncoderImpl::encode(const uint8_t * src_data, uint32_t src_size, s
     return (cm256_encode(src_data, src_size, std::min<uint32_t>(m_max_block_size, src_size + sizeof(block_t)), m_recovery_rate, m_force_recovery, m_group_id, dst_list));
 }
 
+void CauchyFecEncoderImpl::reset()
+{
+    m_group_id = 0;
+}
+
 class CauchyFecDecoderImpl
 {
 public:
@@ -728,6 +745,9 @@ public:
 
 public:
     bool decode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list);
+
+public:
+    void reset();
 
 private:
     const uint32_t      m_max_delay_microseconds;
@@ -751,6 +771,11 @@ CauchyFecDecoderImpl::~CauchyFecDecoderImpl()
 bool CauchyFecDecoderImpl::decode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list)
 {
     return (cm256_decode(src_data, src_size, m_groups, dst_list, m_max_delay_microseconds));
+}
+
+void CauchyFecDecoderImpl::reset()
+{
+    m_groups.reset();
 }
 
 CauchyFecEncoder::CauchyFecEncoder()
@@ -785,6 +810,14 @@ bool CauchyFecEncoder::encode(const uint8_t * src_data, uint32_t src_size, std::
     return (nullptr != m_encoder && m_encoder->encode(src_data, src_size, dst_list));
 }
 
+void CauchyFecEncoder::reset()
+{
+    if (nullptr != m_encoder)
+    {
+        m_encoder->reset();
+    }
+}
+
 CauchyFecDecoder::CauchyFecDecoder()
     : m_decoder(nullptr)
 {
@@ -815,4 +848,12 @@ void CauchyFecDecoder::exit()
 bool CauchyFecDecoder::decode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list)
 {
     return (nullptr != m_decoder && m_decoder->decode(src_data, src_size, dst_list));
+}
+
+void CauchyFecDecoder::reset()
+{
+    if (nullptr != m_decoder)
+    {
+        m_decoder->reset();
+    }
 }
