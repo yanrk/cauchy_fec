@@ -622,7 +622,7 @@ static bool cm256_decode(const void * data, uint32_t size, groups_t & groups, st
         }
 
         const group_src_t & group_src = groups.src_item[groups.new_group_id];
-        if (group_src.head.block_count != group_src.head.original_count)
+        if (group_src.head.block_count != group_src.head.original_count && groups.new_group_id < groups.min_group_id + 3)
         {
             return (false);
         }

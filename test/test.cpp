@@ -74,15 +74,15 @@ int main()
 
     std::list<std::vector<uint8_t>>::iterator iter_1_b = tmp_list.begin();
     std::list<std::vector<uint8_t>>::iterator iter_1_e = iter_1_b;
-    std::advance(iter_1_e, 5); // 
+    std::advance(iter_1_e, 5);
     std::list<std::vector<uint8_t>>::iterator iter_2_b = iter_1_e;
     std::advance(iter_2_b, 80);
     std::list<std::vector<uint8_t>>::iterator iter_2_e = iter_2_b;
-    std::advance(iter_2_e, 9); //
+    std::advance(iter_2_e, 9);
     std::list<std::vector<uint8_t>>::iterator iter_3_b = iter_2_e;
     std::advance(iter_3_b, 130);
     std::list<std::vector<uint8_t>>::iterator iter_3_e = iter_3_b;
-    std::advance(iter_3_e, 11); //
+    std::advance(iter_3_e, 11);
     std::list<std::vector<uint8_t>>::iterator iter_4_b = iter_3_e;
     std::advance(iter_4_b, 74);
     std::list<std::vector<uint8_t>>::iterator iter_4_e = iter_4_b;
@@ -103,7 +103,6 @@ int main()
     int32_t s3 = 0;
     int32_t m3 = 0;
     get_system_time(s3, m3);
-
 
     CauchyFecDecoder decoder;
     if (!decoder.init(30))
@@ -133,6 +132,8 @@ int main()
     {
         return (5);
     }
+
+    std::cout << "ok" << std::endl;
 
     return (0);
 }
