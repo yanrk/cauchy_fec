@@ -408,6 +408,22 @@ static bool insert_group_block(const void * data, uint32_t size, groups_t & grou
     block_head_t new_block_head = *reinterpret_cast<const block_head_t *>(data);
     new_block_head.decode();
 
+    if (0 == new_block_head.original_count || new_block_head.block_id >= new_block_head.original_count + new_block_head.recovery_count)
+    {
+        return (false);
+    }
+
+    if (new_block_head.block_id < new_block_head.original_count)
+    {
+        block_body_t new_block_body = *reinterpret_cast<const block_body_t *>(reinterpret_cast<const uint8_t *>(data) + sizeof(block_head_t));
+        new_block_body.decode();
+
+        if (0 == new_block_body.frame_count || new_block_body.frame_index >= new_block_body.frame_count || sizeof(block_t) + new_block_body.block_bytes > size)
+        {
+            return (false);
+        }
+    }
+
     if (new_block_head.group_id < groups.min_group_id)
     {
         return (false);
