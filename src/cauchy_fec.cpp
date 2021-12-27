@@ -25,6 +25,8 @@
 #include "cm256.h"
 #include "cauchy_fec.h"
 
+const uint8_t s_protocol = 0xcf;
+
 static void byte_order_convert(void * obj, size_t size)
 {
     assert(nullptr != obj);
@@ -63,6 +65,7 @@ static void net_to_host(void * obj, size_t size)
 struct block_head_t
 {
     uint64_t                            group_id;
+    uint8_t                             protocol;
     uint8_t                             block_id;
     uint8_t                             original_count;
     uint8_t                             recovery_count;
@@ -70,6 +73,7 @@ struct block_head_t
     void encode()
     {
         host_to_net(&group_id, sizeof(group_id));
+        host_to_net(&protocol, sizeof(protocol));
         host_to_net(&block_id, sizeof(block_id));
         host_to_net(&original_count, sizeof(original_count));
         host_to_net(&recovery_count, sizeof(recovery_count));
@@ -78,6 +82,7 @@ struct block_head_t
     void decode()
     {
         net_to_host(&group_id, sizeof(group_id));
+        net_to_host(&protocol, sizeof(protocol));
         net_to_host(&block_id, sizeof(block_id));
         net_to_host(&original_count, sizeof(original_count));
         net_to_host(&recovery_count, sizeof(recovery_count));
@@ -235,7 +240,7 @@ static void get_current_time(uint32_t & seconds, uint32_t & microseconds)
 #endif // _MSC_VER
 }
 
-static bool create_original_blocks(CM256::cm256_block * blocks, std::list<std::vector<uint8_t>> & original_blocks, block_head_t & block_head, block_body_t & block_body, const uint8_t *& data, uint32_t & size)
+static bool create_original_blocks(CM256::cm256_block * blocks, std::list<std::vector<uint8_t>> & original_blocks, block_head_t & block_head, block_body_t & block_body, const uint8_t *& data, uint32_t & size, encode_callback_t encode_callback, void * user_data)
 {
     const uint32_t block_size = static_cast<uint32_t>(sizeof(block_t) + block_body.block_bytes);
 
@@ -246,6 +251,7 @@ static bool create_original_blocks(CM256::cm256_block * blocks, std::list<std::v
         block_t * block = reinterpret_cast<block_t *>(&original_buffer[0]);
 
         block->head.group_id = block_head.group_id;
+        block->head.protocol = s_protocol;
         block->head.block_id = block_id;
         block->head.original_count = block_head.original_count;
         block->head.recovery_count = block_head.recovery_count;
@@ -269,13 +275,20 @@ static bool create_original_blocks(CM256::cm256_block * blocks, std::list<std::v
         blocks[block_id].Block = &block->body;
         blocks[block_id].Index = block_id;
 
-        original_blocks.emplace_back(std::move(original_buffer));
+        if (nullptr != encode_callback)
+        {
+            (*encode_callback)(user_data, &original_buffer[0], static_cast<uint32_t>(original_buffer.size()));
+        }
+        else
+        {
+            original_blocks.emplace_back(std::move(original_buffer));
+        }
     }
 
     return (true);
 }
 
-static bool create_recovery_blocks(CM256::cm256_block * blocks, std::list<std::vector<uint8_t>> & recovery_blocks, const block_head_t & block_head, const block_body_t & block_body)
+static bool create_recovery_blocks(CM256::cm256_block * blocks, std::list<std::vector<uint8_t>> & recovery_blocks, const block_head_t & block_head, const block_body_t & block_body, encode_callback_t encode_callback, void * user_data)
 {
     if (0 == block_head.recovery_count)
     {
@@ -293,6 +306,7 @@ static bool create_recovery_blocks(CM256::cm256_block * blocks, std::list<std::v
         block_t * block = reinterpret_cast<block_t *>(&recovery_buffer[0]);
 
         block->head.group_id = block_head.group_id;
+        block->head.protocol = s_protocol;
         block->head.block_id = block_head.original_count + block_id;
         block->head.original_count = block_head.original_count;
         block->head.recovery_count = block_head.recovery_count;
@@ -304,7 +318,14 @@ static bool create_recovery_blocks(CM256::cm256_block * blocks, std::list<std::v
 
         recovery_data[block_id] = reinterpret_cast<uint8_t *>(&block->body);
 
-        recovery_blocks.emplace_back(std::move(recovery_buffer));
+        if (nullptr != encode_callback)
+        {
+            (*encode_callback)(user_data, &recovery_buffer[0], static_cast<uint32_t>(recovery_buffer.size()));
+        }
+        else
+        {
+            recovery_blocks.emplace_back(std::move(recovery_buffer));
+        }
     }
 
     CM256 cm256;
@@ -322,7 +343,7 @@ static bool create_recovery_blocks(CM256::cm256_block * blocks, std::list<std::v
     return (true);
 }
 
-static bool cm256_encode(const uint8_t * src_data, uint32_t src_size, uint32_t max_block_size, double recovery_rate, bool force_recovery, uint64_t & group_id, std::list<std::vector<uint8_t>> & dst_list)
+static bool cm256_encode(const uint8_t * src_data, uint32_t src_size, uint32_t max_block_size, double recovery_rate, bool force_recovery, uint64_t & group_id, std::list<std::vector<uint8_t>> & dst_list, encode_callback_t encode_callback, void * user_data)
 {
     if (nullptr == src_data || 0 == src_size)
     {
@@ -380,13 +401,13 @@ static bool cm256_encode(const uint8_t * src_data, uint32_t src_size, uint32_t m
         CM256::cm256_block blocks[256];
 
         std::list<std::vector<uint8_t>> original_blocks;
-        if (!create_original_blocks(blocks, original_blocks, block_head, block_body, src_data, src_size))
+        if (!create_original_blocks(blocks, original_blocks, block_head, block_body, src_data, src_size, encode_callback, user_data))
         {
             return (false);
         }
 
         std::list<std::vector<uint8_t>> recovery_blocks;
-        if (!create_recovery_blocks(blocks, recovery_blocks, block_head, block_body))
+        if (!create_recovery_blocks(blocks, recovery_blocks, block_head, block_body, encode_callback, user_data))
         {
             return (false);
         }
@@ -404,11 +425,15 @@ static bool cm256_encode(const uint8_t * src_data, uint32_t src_size, uint32_t m
 static bool insert_group_block(const void * data, uint32_t size, groups_t & groups, uint32_t max_delay_microseconds)
 {
     const uint32_t new_block_size = static_cast<uint32_t>(size);
+    if (size < sizeof(block_t))
+    {
+        return (false);
+    }
 
     block_head_t new_block_head = *reinterpret_cast<const block_head_t *>(data);
     new_block_head.decode();
 
-    if (0 == new_block_head.original_count || new_block_head.block_id >= new_block_head.original_count + new_block_head.recovery_count)
+    if (s_protocol != new_block_head.protocol || 0 == new_block_head.original_count || new_block_head.block_id >= new_block_head.original_count + new_block_head.recovery_count)
     {
         return (false);
     }
@@ -628,7 +653,25 @@ static void remove_expired_blocks(groups_t & groups)
     }
 }
 
-static bool cm256_decode(const void * data, uint32_t size, groups_t & groups, std::list<std::vector<uint8_t>> & dst_list, uint32_t max_delay_microseconds)
+static bool check_package(const uint8_t * data, uint32_t size)
+{
+    if (nullptr == data || size < sizeof(block_t))
+    {
+        return (false);
+    }
+
+    block_head_t block_head = *reinterpret_cast<const block_head_t *>(data);
+    block_head.decode();
+
+    if (s_protocol != block_head.protocol || 0 == block_head.original_count || block_head.block_id >= block_head.original_count + block_head.recovery_count)
+    {
+        return (false);
+    }
+
+    return (true);
+}
+
+static bool cm256_decode(const void * data, uint32_t size, groups_t & groups, std::list<std::vector<uint8_t>> & dst_list, uint32_t max_delay_microseconds, decode_callback_t decode_callback, void * user_data)
 {
     if (nullptr != data && 0 != size)
     {
@@ -638,13 +681,14 @@ static bool cm256_decode(const void * data, uint32_t size, groups_t & groups, st
         }
 
         const group_src_t & group_src = groups.src_item[groups.new_group_id];
-        if (group_src.head.block_count != group_src.head.original_count && groups.new_group_id < groups.min_group_id + 3)
+        if (group_src.head.block_count != group_src.head.original_count && groups.new_group_id == groups.min_group_id)
         {
             return (false);
         }
     }
 
-    const std::size_t old_dst_list_size = dst_list.size();
+    std::size_t old_dst_list_size = dst_list.size();
+    std::size_t new_dst_list_size = old_dst_list_size;
 
     uint32_t current_seconds = 0;
     uint32_t current_microseconds = 0;
@@ -665,7 +709,15 @@ static bool cm256_decode(const void * data, uint32_t size, groups_t & groups, st
                     group_dst_t & group_dst = groups.dst_item[max_group_id - 1];
                     if (group_dst.complete())
                     {
-                        dst_list.emplace_back(std::move(group_dst.data));
+                        if (nullptr != decode_callback)
+                        {
+                            (*decode_callback)(user_data, &group_dst.data[0], static_cast<uint32_t>(group_dst.data.size()));
+                        }
+                        else
+                        {
+                            dst_list.emplace_back(std::move(group_dst.data));
+                        }
+                        ++new_dst_list_size;
                     }
                     groups.dst_item.erase(max_group_id - 1);
                 }
@@ -693,8 +745,6 @@ static bool cm256_decode(const void * data, uint32_t size, groups_t & groups, st
         }
     }
 
-    const std::size_t new_dst_list_size = dst_list.size();
-
     remove_expired_blocks(groups);
 
     return (new_dst_list_size > old_dst_list_size);
@@ -712,6 +762,7 @@ public:
 
 public:
     bool encode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list);
+    bool encode(const uint8_t * src_data, uint32_t src_size, encode_callback_t encode_callback, void * user_data);
 
 public:
     void reset();
@@ -741,7 +792,13 @@ CauchyFecEncoderImpl::~CauchyFecEncoderImpl()
 
 bool CauchyFecEncoderImpl::encode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list)
 {
-    return (cm256_encode(src_data, src_size, std::min<uint32_t>(m_max_block_size, src_size + sizeof(block_t)), m_recovery_rate, m_force_recovery, m_group_id, dst_list));
+    return (cm256_encode(src_data, src_size, std::min<uint32_t>(m_max_block_size, src_size + sizeof(block_t)), m_recovery_rate, m_force_recovery, m_group_id, dst_list, nullptr, nullptr));
+}
+
+bool CauchyFecEncoderImpl::encode(const uint8_t * src_data, uint32_t src_size, encode_callback_t encode_callback, void * user_data)
+{
+    std::list<std::vector<uint8_t>> dst_list;
+    return (cm256_encode(src_data, src_size, std::min<uint32_t>(m_max_block_size, src_size + sizeof(block_t)), m_recovery_rate, m_force_recovery, m_group_id, dst_list, encode_callback, user_data));
 }
 
 void CauchyFecEncoderImpl::reset()
@@ -761,6 +818,10 @@ public:
 
 public:
     bool decode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list);
+    bool decode(const uint8_t * src_data, uint32_t src_size, decode_callback_t decode_callback, void * user_data);
+
+public:
+    static bool recognizable(const uint8_t * src_data, uint32_t src_size);
 
 public:
     void reset();
@@ -786,7 +847,18 @@ CauchyFecDecoderImpl::~CauchyFecDecoderImpl()
 
 bool CauchyFecDecoderImpl::decode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list)
 {
-    return (cm256_decode(src_data, src_size, m_groups, dst_list, m_max_delay_microseconds));
+    return (cm256_decode(src_data, src_size, m_groups, dst_list, m_max_delay_microseconds, nullptr, nullptr));
+}
+
+bool CauchyFecDecoderImpl::decode(const uint8_t * src_data, uint32_t src_size, decode_callback_t decode_callback, void * user_data)
+{
+    std::list<std::vector<uint8_t>> dst_list;
+    return (cm256_decode(src_data, src_size, m_groups, dst_list, m_max_delay_microseconds, decode_callback, user_data));
+}
+
+bool CauchyFecDecoderImpl::recognizable(const uint8_t * src_data, uint32_t src_size)
+{
+    return (check_package(src_data, src_size));
 }
 
 void CauchyFecDecoderImpl::reset()
@@ -824,6 +896,11 @@ void CauchyFecEncoder::exit()
 bool CauchyFecEncoder::encode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list)
 {
     return (nullptr != m_encoder && m_encoder->encode(src_data, src_size, dst_list));
+}
+
+bool CauchyFecEncoder::encode(const uint8_t * src_data, uint32_t src_size, encode_callback_t encode_callback, void * user_data)
+{
+    return (nullptr != m_encoder && m_encoder->encode(src_data, src_size, encode_callback, user_data));
 }
 
 void CauchyFecEncoder::reset()
@@ -864,6 +941,16 @@ void CauchyFecDecoder::exit()
 bool CauchyFecDecoder::decode(const uint8_t * src_data, uint32_t src_size, std::list<std::vector<uint8_t>> & dst_list)
 {
     return (nullptr != m_decoder && m_decoder->decode(src_data, src_size, dst_list));
+}
+
+bool CauchyFecDecoder::decode(const uint8_t * src_data, uint32_t src_size, decode_callback_t decode_callback, void * user_data)
+{
+    return (nullptr != m_decoder && m_decoder->decode(src_data, src_size, decode_callback, user_data));
+}
+
+bool CauchyFecDecoder::recognizable(const uint8_t * src_data, uint32_t src_size)
+{
+    return (CauchyFecDecoderImpl::recognizable(src_data, src_size));
 }
 
 void CauchyFecDecoder::reset()
