@@ -557,8 +557,6 @@ static bool cm256_decode_group(group_head_t & group_head, group_body_t & group_b
         return (false);
     }
 
-    group_head.block_count = 0;
-
     std::list<std::vector<uint8_t>> src_data_list;
     src_data_list.splice(src_data_list.end(), group_body.original_list);
 
@@ -599,6 +597,11 @@ static bool cm256_decode_group(group_head_t & group_head, group_body_t & group_b
     block_t block = *reinterpret_cast<block_t *>(&src_data_list.front()[0]);
     block.body.decode();
 
+    if (0 == block.body.frame_count || group_head.group_id < block.body.frame_index)
+    {
+        return (false);
+    }
+
     min_group_id = group_head.group_id - block.body.frame_index;
     max_group_id = min_group_id + block.body.frame_count;
 
@@ -615,6 +618,11 @@ static bool cm256_decode_group(group_head_t & group_head, group_body_t & group_b
         std::vector<uint8_t> & data = *iter;
         block_body_t * block_body = reinterpret_cast<block_body_t *>(&data[sizeof(block_head_t)]);
         block_body->decode();
+        if (block_body->frame_index >= block_body->frame_count || block_body->block_index >= group_head.block_count || block.body.frame_size != block_body->frame_size)
+        {
+            dst_data.clear();
+            return (false);
+        }
         if (dst_data.empty())
         {
             dst_data.resize(block_body->frame_size);
