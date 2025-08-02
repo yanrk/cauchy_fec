@@ -4,7 +4,7 @@
  * Email       : yanrkchina@163.com
  * Version     : 1.0
  * History     :
- * Copyright(C): Copyleft
+ * Copyright(C): 2025
  ********************************************************/
 
 #ifdef _MSC_VER
