@@ -4,7 +4,7 @@
  * Email       : yanrkchina@163.com
  * Version     : 1.0
  * History     :
- * Copyright(C): RAYVISION
+ * Copyright(C): Copyleft
  ********************************************************/
 
 #ifdef _MSC_VER
@@ -52,12 +52,12 @@ int main()
     CauchyFecEncoder encoder;
     if (!encoder.init(1100, 0.1, true))
     {
-        return (1);
+        return 1;
     }
 
     if (!encoder.encode(&src_data[0], static_cast<uint32_t>(src_data.size()), tmp_list))
     {
-        return (2);
+        return 2;
     }
 
     int32_t s2 = 0;
@@ -69,7 +69,7 @@ int main()
 
     if (318 != tmp_list.size())
     {
-        return (0);
+        return 0;
     }
 
     std::list<std::vector<uint8_t>>::iterator iter_1_b = tmp_list.begin();
@@ -95,7 +95,7 @@ int main()
 
     if (287 != tmp_list.size())
     {
-        return (0);
+        return 0;
     }
 
     std::list<std::vector<uint8_t>> dst_list;
@@ -107,7 +107,7 @@ int main()
     CauchyFecDecoder decoder;
     if (!decoder.init(30))
     {
-        return (3);
+        return 3;
     }
 
     for (std::list<std::vector<uint8_t>>::const_iterator iter = tmp_list.begin(); tmp_list.end() != iter; ++iter)
@@ -118,7 +118,7 @@ int main()
 
     if (1 != dst_list.size())
     {
-        return (4);
+        return 4;
     }
 
     int32_t s4 = 0;
@@ -130,10 +130,10 @@ int main()
 
     if (dst_list.front() != src_data)
     {
-        return (5);
+        return 5;
     }
 
     std::cout << "ok" << std::endl;
 
-    return (0);
+    return 0;
 }
